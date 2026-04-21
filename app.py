@@ -4,9 +4,33 @@ import pandas as pd
 import joblib
 import sqlite3
 from datetime import datetime
+import plotly.express as px
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Diabetes AI", layout="wide")
+
+# ---------------- CUSTOM CSS ----------------
+st.markdown("""
+<style>
+.main {
+    background-color: #0e1117;
+}
+.card {
+    background: #1c1f26;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+}
+.metric-title {
+    color: gray;
+    font-size: 14px;
+}
+.metric-value {
+    font-size: 28px;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
@@ -16,8 +40,11 @@ def load_model():
 model = load_model()
 
 # ---------------- DB ----------------
+def get_connection():
+    return sqlite3.connect("predictions.db")
+
 def init_db():
-    conn = sqlite3.connect("predictions.db")
+    conn = get_connection()
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
@@ -40,27 +67,58 @@ def init_db():
 
 init_db()
 
+def load_data():
+    conn = get_connection()
+    df = pd.read_sql("SELECT * FROM predictions ORDER BY id DESC", conn)
+    conn.close()
+    return df
+
+df = load_data()
+
 # ---------------- SIDEBAR ----------------
 st.sidebar.title("🧠 Diabetes AI")
-menu = st.sidebar.radio("", ["Dashboard", "New Prediction", "History"])
+menu = st.sidebar.radio(
+    "Menu",
+    ["Dashboard", "New Prediction", "History"],
+    label_visibility="collapsed"
+)
 
 # ---------------- DASHBOARD ----------------
 if menu == "Dashboard":
 
     st.title("Diabetes AI Prediction System")
+    st.caption("Smart health risk analysis using Machine Learning")
 
+    total = len(df)
+    diabetic = len(df[df["prediction"] == "Diabetic"])
+    healthy = len(df[df["prediction"] == "Not Diabetic"])
+    avg_conf = df["confidence"].mean() if total > 0 else 0
+
+    # ----------- METRIC CARDS -----------
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Total Predictions", "32")
-    col2.metric("Diabetic Cases", "16")
-    col3.metric("Healthy Cases", "16")
-    col4.metric("Avg Confidence", "85.5%")
+    def card(title, value):
+        st.markdown(f"""
+        <div class="card">
+            <div class="metric-title">{title}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col1:
+        card("Total Predictions", total)
+    with col2:
+        card("Diabetic Cases", diabetic)
+    with col3:
+        card("Healthy Cases", healthy)
+    with col4:
+        card("Avg Confidence", f"{avg_conf:.1f}%")
 
     st.markdown("---")
 
-    colA, colB = st.columns([2, 1])
+    colA, colB, colC = st.columns([2, 1.5, 1.5])
 
-    # ---------------- FORM ----------------
+    # ----------- INPUT FORM -----------
     with colA:
         st.subheader("Make a New Prediction")
 
@@ -89,8 +147,7 @@ if menu == "Dashboard":
             result = "Diabetic" if prediction == 1 else "Not Diabetic"
             confidence = max(prob) * 100
 
-            # Save to DB
-            conn = sqlite3.connect("predictions.db")
+            conn = get_connection()
             c = conn.cursor()
             c.execute("""
                 INSERT INTO predictions 
@@ -104,25 +161,41 @@ if menu == "Dashboard":
             st.success(f"Prediction: {result}")
             st.progress(int(confidence))
 
-    # ---------------- RESULT ----------------
-    with colB:
-        st.subheader("Prediction Result")
+            st.rerun()
 
-        st.error("HIGH RISK")
-        st.write("Likely Diabetic")
-        st.progress(92)
+    # ----------- DONUT CHART -----------
+    with colB:
+        st.subheader("Prediction Distribution")
+
+        if total > 0:
+            fig = px.pie(
+                names=["Diabetic", "Healthy"],
+                values=[diabetic, healthy],
+                hole=0.6
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No data yet")
+
+    # ----------- TREND CHART -----------
+    with colC:
+        st.subheader("Confidence Trend")
+
+        if total > 0:
+            st.line_chart(df["confidence"])
+        else:
+            st.info("No data yet")
 
 # ---------------- HISTORY ----------------
 elif menu == "History":
     st.title("Prediction History")
 
-    conn = sqlite3.connect("predictions.db")
-    df = pd.read_sql("SELECT * FROM predictions ORDER BY id DESC", conn)
-    conn.close()
+    if len(df) > 0:
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No records found")
 
-    st.dataframe(df)
-
-# ---------------- NEW PREDICTION ----------------
+# ---------------- NEW PAGE ----------------
 elif menu == "New Prediction":
     st.title("New Prediction Page")
-    st.info("Use dashboard to make prediction")
+    st.info("Use Dashboard to make predictions")
