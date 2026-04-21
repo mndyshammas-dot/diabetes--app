@@ -4,17 +4,14 @@ import pandas as pd
 import joblib
 import sqlite3
 from datetime import datetime
-import plotly.express as px
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Diabetes AI", layout="wide")
 
-# ---------------- CUSTOM CSS ----------------
+# ---------------- STYLE ----------------
 st.markdown("""
 <style>
-.main {
-    background-color: #0e1117;
-}
+body {background-color: #0e1117;}
 .card {
     background: #1c1f26;
     padding: 20px;
@@ -26,7 +23,7 @@ st.markdown("""
     font-size: 14px;
 }
 .metric-value {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: bold;
 }
 </style>
@@ -39,15 +36,19 @@ def load_model():
 
 model = load_model()
 
-# ---------------- DB ----------------
+# ---------------- DATABASE ----------------
 def get_connection():
-    return sqlite3.connect("predictions.db")
+    return sqlite3.connect("predictions.db", check_same_thread=False)
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+
+    # 🔥 FIX: reset table (important)
+    c.execute("DROP TABLE IF EXISTS predictions")
+
     c.execute("""
-        CREATE TABLE IF NOT EXISTS predictions (
+        CREATE TABLE predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pregnancies INT,
             glucose INT,
@@ -62,6 +63,7 @@ def init_db():
             timestamp TEXT
         )
     """)
+
     conn.commit()
     conn.close()
 
@@ -73,15 +75,9 @@ def load_data():
     conn.close()
     return df
 
-df = load_data()
-
 # ---------------- SIDEBAR ----------------
 st.sidebar.title("🧠 Diabetes AI")
-menu = st.sidebar.radio(
-    "Menu",
-    ["Dashboard", "New Prediction", "History"],
-    label_visibility="collapsed"
-)
+menu = st.sidebar.radio("", ["Dashboard", "History"])
 
 # ---------------- DASHBOARD ----------------
 if menu == "Dashboard":
@@ -89,11 +85,14 @@ if menu == "Dashboard":
     st.title("Diabetes AI Prediction System")
     st.caption("Smart health risk analysis using Machine Learning")
 
+    df = load_data()
+
     total = len(df)
     diabetic = len(df[df["prediction"] == "Diabetic"])
     healthy = len(df[df["prediction"] == "Not Diabetic"])
     avg_conf = df["confidence"].mean() if total > 0 else 0
 
+    # ----------- METRICS -----------
     col1, col2, col3, col4 = st.columns(4)
 
     def card(title, value):
@@ -111,9 +110,9 @@ if menu == "Dashboard":
 
     st.markdown("---")
 
-    colA, colB, colC = st.columns([2, 1.5, 1.5])
+    colA, colB = st.columns([2, 1])
 
-    # ---------------- INPUT FORM ----------------
+    # ----------- INPUT FORM -----------
     with colA:
         st.subheader("Make a New Prediction")
 
@@ -133,76 +132,71 @@ if menu == "Dashboard":
 
         if st.button("🚀 Analyze Risk"):
 
-            input_data = np.array([[pregnancies, glucose, bp, skin,
-                                    insulin, bmi, dpf, age]])
+            try:
+                input_data = np.array([[pregnancies, glucose, bp, skin,
+                                        insulin, bmi, dpf, age]])
 
-            prediction = model.predict(input_data)[0]
-            prob = model.predict_proba(input_data)[0]
+                prediction = model.predict(input_data)[0]
+                prob = model.predict_proba(input_data)[0]
 
-            result = "Diabetic" if prediction == 1 else "Not Diabetic"
-            confidence = max(prob) * 100
+                result = "Diabetic" if prediction == 1 else "Not Diabetic"
+                confidence = float(max(prob) * 100)
 
-            # ✅ CORRECT INSERT (inside button only)
-            conn = get_connection()
-            c = conn.cursor()
-            c.execute("""
-            INSERT INTO predictions 
-            (pregnancies, glucose, bp, skin, insulin, bmi, dpf, age, prediction, confidence, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                int(pregnancies),
-                int(glucose),
-                int(bp),
-                int(skin),
-                int(insulin),
-                float(bmi),
-                float(dpf),
-                int(age),
-                result,
-                float(confidence),
-                str(datetime.now())
-            ))
-            conn.commit()
-            conn.close()
+                # SAVE TO DB (SAFE)
+                conn = get_connection()
+                c = conn.cursor()
 
-            st.success(f"Prediction: {result}")
-            st.progress(int(confidence))
+                c.execute("""
+                    INSERT INTO predictions 
+                    (pregnancies, glucose, bp, skin, insulin, bmi, dpf, age, prediction, confidence, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    int(pregnancies),
+                    int(glucose),
+                    int(bp),
+                    int(skin),
+                    int(insulin),
+                    float(bmi),
+                    float(dpf),
+                    int(age),
+                    result,
+                    confidence,
+                    str(datetime.now())
+                ))
 
-            st.rerun()
+                conn.commit()
+                conn.close()
 
-    # ---------------- DONUT ----------------
+                st.success(f"Prediction: {result}")
+
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    # ----------- RESULT PANEL -----------
     with colB:
-        st.subheader("Prediction Distribution")
+        st.subheader("Prediction Result")
 
         if total > 0:
-            fig = px.pie(
-                names=["Diabetic", "Healthy"],
-                values=[diabetic, healthy],
-                hole=0.6
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No data yet")
+            last = df.iloc[0]
 
-    # ---------------- TREND ----------------
-    with colC:
-        st.subheader("Confidence Trend")
+            if last["prediction"] == "Diabetic":
+                st.error("HIGH RISK")
+            else:
+                st.success("LOW RISK")
 
-        if total > 0:
-            st.line_chart(df["confidence"])
+            st.write(last["prediction"])
+            st.progress(int(last["confidence"]))
         else:
-            st.info("No data yet")
+            st.info("No predictions yet")
 
 # ---------------- HISTORY ----------------
 elif menu == "History":
+
     st.title("Prediction History")
+
+    df = load_data()
 
     if len(df) > 0:
         st.dataframe(df, use_container_width=True)
     else:
-        st.info("No records found")
-
-# ---------------- NEW PAGE ----------------
-elif menu == "New Prediction":
-    st.title("New Prediction Page")
-    st.info("Use Dashboard to make predictions")
+        st.info("No data available")
