@@ -94,7 +94,6 @@ if menu == "Dashboard":
     healthy = len(df[df["prediction"] == "Not Diabetic"])
     avg_conf = df["confidence"].mean() if total > 0 else 0
 
-    # ----------- METRIC CARDS -----------
     col1, col2, col3, col4 = st.columns(4)
 
     def card(title, value):
@@ -105,20 +104,16 @@ if menu == "Dashboard":
         </div>
         """, unsafe_allow_html=True)
 
-    with col1:
-        card("Total Predictions", total)
-    with col2:
-        card("Diabetic Cases", diabetic)
-    with col3:
-        card("Healthy Cases", healthy)
-    with col4:
-        card("Avg Confidence", f"{avg_conf:.1f}%")
+    with col1: card("Total Predictions", total)
+    with col2: card("Diabetic Cases", diabetic)
+    with col3: card("Healthy Cases", healthy)
+    with col4: card("Avg Confidence", f"{avg_conf:.1f}%")
 
     st.markdown("---")
 
     colA, colB, colC = st.columns([2, 1.5, 1.5])
 
-    # ----------- INPUT FORM -----------
+    # ---------------- INPUT FORM ----------------
     with colA:
         st.subheader("Make a New Prediction")
 
@@ -147,14 +142,26 @@ if menu == "Dashboard":
             result = "Diabetic" if prediction == 1 else "Not Diabetic"
             confidence = max(prob) * 100
 
+            # ✅ CORRECT INSERT (inside button only)
             conn = get_connection()
             c = conn.cursor()
             c.execute("""
-                INSERT INTO predictions 
-                (pregnancies, glucose, bp, skin, insulin, bmi, dpf, age, prediction, confidence, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (pregnancies, glucose, bp, skin, insulin, bmi, dpf, age,
-                  result, confidence, str(datetime.now())))
+            INSERT INTO predictions 
+            (pregnancies, glucose, bp, skin, insulin, bmi, dpf, age, prediction, confidence, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                int(pregnancies),
+                int(glucose),
+                int(bp),
+                int(skin),
+                int(insulin),
+                float(bmi),
+                float(dpf),
+                int(age),
+                result,
+                float(confidence),
+                str(datetime.now())
+            ))
             conn.commit()
             conn.close()
 
@@ -163,7 +170,7 @@ if menu == "Dashboard":
 
             st.rerun()
 
-    # ----------- DONUT CHART -----------
+    # ---------------- DONUT ----------------
     with colB:
         st.subheader("Prediction Distribution")
 
@@ -177,7 +184,7 @@ if menu == "Dashboard":
         else:
             st.info("No data yet")
 
-    # ----------- TREND CHART -----------
+    # ---------------- TREND ----------------
     with colC:
         st.subheader("Confidence Trend")
 
