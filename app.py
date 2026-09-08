@@ -44,11 +44,9 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # 🔥 FIX: reset table (important)
-    c.execute("DROP TABLE IF EXISTS predictions")
-
+    # ✅ FIX: DO NOT DROP TABLE
     c.execute("""
-        CREATE TABLE predictions (
+        CREATE TABLE IF NOT EXISTS predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pregnancies INT,
             glucose INT,
@@ -142,7 +140,7 @@ if menu == "Dashboard":
                 result = "Diabetic" if prediction == 1 else "Not Diabetic"
                 confidence = float(max(prob) * 100)
 
-                # SAVE TO DB (SAFE)
+                # SAVE TO DB
                 conn = get_connection()
                 c = conn.cursor()
 
@@ -169,6 +167,9 @@ if menu == "Dashboard":
 
                 st.success(f"Prediction: {result}")
 
+                # 🔥 Refresh data instantly
+                st.rerun()
+
             except Exception as e:
                 st.error(f"Error: {e}")
 
@@ -176,7 +177,7 @@ if menu == "Dashboard":
     with colB:
         st.subheader("Prediction Result")
 
-        if total > 0:
+        if len(df) > 0:
             last = df.iloc[0]
 
             if last["prediction"] == "Diabetic":
