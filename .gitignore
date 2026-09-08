@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 *.pkl
 predictions.db
+
+# Ignore ZIP archives
+*.zip
+
+# Ignore other task notebooks
+Notebook/
